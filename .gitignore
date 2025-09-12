@@ -1,0 +1,10 @@
+# Saját fájlok és mappák
+.env
+candles_for_backtest/
+activity_log.csv
+chart_log/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
