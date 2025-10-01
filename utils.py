@@ -22,5 +22,5 @@ timeframes_and_multipliers = {
     '1w': 10080
 }
 
-min_timeframe_backtest = '5m'
+min_timeframe_backtest = '1m'
 max_timeframe_backtest = None

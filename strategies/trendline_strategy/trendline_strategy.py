@@ -24,25 +24,26 @@ class TrendlineStrategy(Strategy):
         if not self.fw.is_trade_open(sym, strategy=self):
             self.open_long(sym, tf)
             self.open_short(sym, tf)
-        if self.fw.is_trade_open(sym, strategy=self):
+        else:
+            return
             self.manage_long(sym, tf)
             self.manage_short(sym, tf)
     
     def open_long(self, sym, tf):
         trendline = self.fw.filter_trendlines(self.resistance_trendlines[tf], pos=-1)
-        if trendline is None or trendline.touchpoints < 2 or trendline.slope < 13: return
+        if trendline is None or trendline.touchpoints < 3 or trendline.slope < 13: return
         last_candle = self.fw.get_last_closed_candle(sym, tf)
         trendline_value = self.fw.get_trendline_value_at(trendline, last_candle['time'])
         unit = self.fw.get_trendline_unit_at(sym, tf, last_candle['close'])
         if last_candle['close'] > trendline_value + (3*unit):
             trade = self.fw.create_trade(
-                symbol=sym,
-                timeframe=tf,
+                timeframe_obj=self.fw.get_timeframe_obj(sym, tf),
                 direction=1,
                 strategy=self,
                 risk_pct=2,
                 entry_price=last_candle['close'],
                 stop_loss=trendline_value - (5*unit),
+                risk_reward=1.5,
                 details={'resistance_trendlines_visual': [trendline]}
             )
             self.open_trade(trade)

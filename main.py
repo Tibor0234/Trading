@@ -5,6 +5,7 @@ from strategies.liq_sweep_strategy.liq_sweep_strategy import LiqSweepStrategy
 from strategies.trendline_strategy.trendline_strategy import TrendlineStrategy
 from strategies.trend_strategy.trend_strategy import TrendStrategy
 from strategies.wick_strategy.wick_strategy import WickStrategy
+from strategies.candle_strategy.candle_strategy import CandleStrategy
 
 #Settings------------------------------------------------------------
 
@@ -12,9 +13,10 @@ live = False
 
 strategies = [
     #WickStrategy()
-    #LiqSweepStrategy(),
-    TrendlineStrategy()
+    #LiqSweepStrategy()
+    #TrendlineStrategy()
     #TrendStrategy()
+    CandleStrategy()
 ]
 
 backtest_start_time = 1687651200

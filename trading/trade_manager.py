@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from data.log_handler import log_event
 
 class TradeManager(ABC):
     def __init__(self, trade_service, account_manager):
@@ -7,12 +8,16 @@ class TradeManager(ABC):
         self.trade_service = trade_service
         self.account_manager = account_manager
 
+    def set_trade_values(self, trade):
+        return self.account_manager.set_trade_value(trade)
+
     def add_ongoing_trade(self, trade):
         if self.is_trade_invalid_abstract(trade):
             return False
-        self.account_manager.set_trade_value(trade)
-        self.trade_service.on_trade_event(trade)
         self.ongoing_trades.append(trade)
+        html_path = self.trade_service.on_trade_event(trade)
+        self.place_market_order_abstract(trade)
+        log_event('A trade has been opened.', ' ' + html_path)
         return True
 
     def set_stop_loss(self, trade, sl):
@@ -47,18 +52,39 @@ class TradeManager(ABC):
             self._finalize_trade(trade)
     
     def _finalize_trade(self, trade):
-        self.trade_service.on_trade_event(trade)
-        if trade.approved:
-            self.account_manager.update_account_balance(trade)
         self.ongoing_trades.remove(trade)
+        html_path = self.trade_service.on_trade_event(trade)
+        log_event('A trade has been closed.', ' ' + html_path)
+        if trade.approved:
+            result = self.account_manager.update_account_balance(trade)
+            self.trade_service.on_trade_close(trade, result)
+            self.close_position_abstract(trade)
 
     @abstractmethod
     def is_trade_invalid_abstract(self, trade):
         pass
 
+    @abstractmethod
+    def place_market_order_abstract(self, trade):
+        pass
+
+    @abstractmethod
+    def close_position_abstract(self, trade):
+        pass
+
 class TradeManagerLive(TradeManager):
+    def __init__(self, trade_service, account_manager, trading_client):
+        super().__init__(trade_service, account_manager)
+        self.trading_client = trading_client
+
     def is_trade_invalid_abstract(self, trade):
-        return  any(t.symbol == trade.symbol for t in self.ongoing_trades)
+        return not trade.approved or any(t.symbol == trade.symbol for t in self.ongoing_trades)
+    
+    def place_market_order_abstract(self, trade):
+        self.trading_client.open_market_order(trade)
+    
+    def close_position_abstract(self, trade):
+        self.trading_client.close_position(trade)
 
     def update_ongoing_trades(self, sym, price):
         self._update_trades_with_condition(lambda t: t.symbol == sym and t.is_closed(price))
@@ -78,6 +104,12 @@ class TradeManagerLive(TradeManager):
 class TradeManagerBacktest(TradeManager):
     def is_trade_invalid_abstract(self, trade):
         return False
+    
+    def place_market_order_abstract(self, trade):
+        return
+    
+    def close_position_abstract(self, trade):
+        return
 
     def update_ongoing_trades(self, sym, tf, cache_df):
         def condition(t):

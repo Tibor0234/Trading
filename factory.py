@@ -29,11 +29,12 @@ from visualizer.trend_visualizer import TrendVisualizer
 from visualizer.order_zone_visualizer import OrderZoneVisualizer
 from visualizer.trendline_visualizer import TrendlineVisualizer
 from trading.trade_manager import TradeManagerLive, TradeManagerBacktest
-from trading.account_manager import AccountManager
+from trading.account_manager import AccountManagerLive, AccountManagerBacktest
 from data.ws_client_live import WsClientLive
 from data.ws_client_backtest import WsClientBacktest
 from trade_service import TradeServiceLive, TradeServiceBacktest
 from discord_bot.discord_bot import DiscordBot
+from trading.trading_client import TradingClient
 
 class Factory(ABC):
     @staticmethod
@@ -139,7 +140,7 @@ class Factory(ABC):
         engine.set_dependencies(timeframe_handler)
         
         #Trade manager
-        account_manager = AccountManager(factory_params['bt_account_balance'])
+        account_manager = self.create_account_manager_abstract(factory_params['bt_account_balance'])
         trade_manager = self.create_trade_manager_abstract(trade_service, account_manager)
 
         #Websocket
@@ -147,13 +148,19 @@ class Factory(ABC):
         websocket_client = self.create_websocket_client_abstract(ws_callback_func)
 
         #Discord bot
-        discord_bot = DiscordBot(discord_bot_token, trade_service.on_discord_reaction)
-        discord_thread = threading.Thread(target=discord_bot.run_bot, daemon=True)
-        discord_thread.start()
+        discord_bot = self.manage_discord_bot_abstract(discord_bot_token, trade_service.on_discord_reaction)
 
         trade_service.set_dependencies(engine, trade_manager, discord_bot)
 
         return trade_service, websocket_client
+
+    @abstractmethod
+    def create_account_manager_abstract(self, bt_account_balance):
+        pass
+
+    @abstractmethod
+    def manage_discord_bot_abstract(self, token, on_discord_reaction):
+        pass
 
     @abstractmethod
     def invalid_timeframe_abstract(self, mp, min_timeframe_mp, max_timeframe_mp):
@@ -208,6 +215,15 @@ class Factory(ABC):
         pass
 
 class FactoryLive(Factory):
+    def create_account_manager_abstract(self, bt_account_balance):
+        return AccountManagerLive()
+
+    def manage_discord_bot_abstract(self, token, on_discord_reaction):
+        discord_bot = DiscordBot(discord_bot_token, on_discord_reaction)
+        discord_thread = threading.Thread(target=discord_bot.run_bot, daemon=True)
+        discord_thread.start()
+        return discord_bot
+
     def invalid_timeframe_abstract(self, mp, min_timeframe_mp, max_timeframe_mp):
         return False
 
@@ -245,7 +261,8 @@ class FactoryLive(Factory):
         return TimeframeLive(sym, tf, timestamp, candle, candles_to_cache, callback_on_close, callback_on_restore, analyzer)
     
     def create_trade_manager_abstract(self, trade_service, account_manager):
-        return TradeManagerLive(trade_service, account_manager)
+        trading_client = TradingClient()
+        return TradeManagerLive(trade_service, account_manager, trading_client)
     
     def valid_symbol_abstract(self, sym):
         return True
@@ -254,6 +271,12 @@ class FactoryLive(Factory):
         Database.instance.save_to_db_replace(candles_to_save, sym, tf)
     
 class FactoryBacktest(Factory):
+    def create_account_manager_abstract(self, bt_account_balance):
+        return AccountManagerBacktest(bt_account_balance)
+
+    def manage_discord_bot_abstract(self, token, on_discord_reaction):
+        return None
+
     def invalid_timeframe_abstract(self, mp, min_timeframe_mp, max_timeframe_mp):
         return (min_timeframe_mp is not None and mp < min_timeframe_mp) or (max_timeframe_mp is not None and mp > max_timeframe_mp)
 

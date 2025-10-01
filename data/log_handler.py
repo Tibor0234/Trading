@@ -2,6 +2,8 @@ import os
 import time
 import pandas as pd
 import csv
+from playwright.sync_api import sync_playwright
+from PIL import Image
 from config import activity_log_path, chart_log_path
 from data.time_provider import TimeProvider
 
@@ -45,3 +47,25 @@ def log_chart(symbol, timeframe, fig):
     fig.write_html(file_path)
 
     return file_path
+
+def make_screenshot(html_path: str) -> str | None:
+    img_path = html_path.replace('.html', '.png')
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_viewport_size({"width": 1200, "height": 800})
+
+        url = f'file:///{html_path.replace(os.sep, "/")}'
+        page.goto(url)
+
+        page.screenshot(path=img_path, full_page=False)
+
+        browser.close()
+
+    img = Image.open(img_path)
+    w, h = img.size
+    if w > 40 and h > 40:
+        img.crop((20, 20, w-20, h-20)).save(img_path)
+
+    return img_path

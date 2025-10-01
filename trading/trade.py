@@ -1,14 +1,15 @@
 class Trade():
     id = 0
 
-    def __init__(self, symbol, timeframe, direction, risk_pct, strategy, entry_price,
+    def __init__(self, timeframe_obj, direction, risk_pct, strategy, entry_price,
                 stop_loss, take_profit = None, risk_reward = None, details = {}):
         self.id = Trade.id
         Trade.id += 1
                 
         #essential
-        self.symbol = symbol
-        self.timeframe = timeframe
+        self.timeframe_obj = timeframe_obj
+        self.symbol = timeframe_obj.symbol
+        self.timeframe = timeframe_obj.timeframe
         self.direction = direction
         self.risk_pct = risk_pct
         self.strategy = strategy
@@ -22,6 +23,9 @@ class Trade():
 
         #later
         self.value = None
+        self.margin = None
+        self.leverage = None
+        self.contracts = None
         self.visual_open_time = None
 
         if stop_loss is not None:
@@ -35,6 +39,7 @@ class Trade():
         self.close_price = None
 
         self.approved = False
+        self.setup_msg_id = None
 
     def set_sl(self, sl):
         self.stop_loss = sl

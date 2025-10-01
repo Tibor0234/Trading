@@ -1,5 +1,4 @@
-from abc import ABC
-import asyncio
+from abc import ABC, abstractmethod
 
 class TradeService(ABC):
     def __init__(self):
@@ -41,10 +40,6 @@ class TradeService(ABC):
             strategy.on_candles_restored(sym, tf)
 
     #strategy -> trade_manager
-    def on_trade_open(self, trade):
-        self.trade_manager.add_ongoing_trade(trade)
-
-    #strategy -> trade_manager
     def on_set_stop_loss(self, trade, sl):
         self.trade_manager.set_stop_loss(trade, sl)
 
@@ -62,22 +57,16 @@ class TradeService(ABC):
 
     #trade_manager -> engine
     def on_trade_event(self, trade):
-        html_path = self.engine.visualize_from_trade(trade)
-        self.send_discord_trade_setup(html_path, 60)
+        return self.engine.visualize_from_trade(trade)
 
-    def send_discord_trade_result(self, html_path):
-        self.discord_bot.send_trade_result(html_path)
+    #discord_bot -> trade manager
+    def on_discord_reaction(self, trade, is_approved):
+        trade.approved = is_approved
+        self.trade_manager.add_ongoing_trade(trade)
 
-    def send_discord_trade_setup(self, html_path, timeout):
-        asyncio.run_coroutine_threadsafe(
-            self.discord_bot.send_setup_dm(html_path, timeout),
-            self.discord_bot.bot.loop
-        )
-
-    #discord_bot ->
-    def on_discord_reaction(self, is_approved):
-        if is_approved: print('trade elfogadva')
-        else: print('trade elutasítva')
+    @abstractmethod
+    def on_trade_open(self, trade):
+        pass
 
 class TradeServiceLive(TradeService):
     #engine -> trade_manager
@@ -88,7 +77,25 @@ class TradeServiceLive(TradeService):
     def on_update_trades_restore(self, symbol, timeframe, cache_df):
         self.trade_manager.update_ongoing_trades_on_restore(self, symbol, timeframe, cache_df)
 
+    #strategy -> discord bot
+    def on_trade_open(self, trade):
+        valid = self.trade_manager.set_trade_values(trade)
+        if not valid: return
+        html_path = self.engine.visualize_from_trade(trade)
+        self.discord_bot.run_setup_message(trade, html_path)
+
+    #trade_manager -> discord bot
+    def on_trade_close(self, trade, result):
+        html_path = self.engine.visualize_from_trade(trade)
+        self.discord_bot.run_result_message(trade, html_path, result)
+
 class TradeServiceBacktest(TradeService):
     #engine -> trade_manager
     def on_update_trades(self, symbol, timeframe, cache_df):
         self.trade_manager.update_ongoing_trades(symbol, timeframe, cache_df)
+
+    #strategy -> trade manager
+    def on_trade_open(self, trade):
+        trade.approved = True
+        self.trade_manager.set_trade_values(trade)
+        self.trade_manager.add_ongoing_trade(trade)

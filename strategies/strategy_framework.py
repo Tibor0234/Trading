@@ -11,11 +11,10 @@ class StrategyFramework(ABC):
         self.account_manager = trade_service.get_account_manager()
 
     #trade manager methods
-    def create_trade(self, symbol, timeframe, direction, strategy, risk_pct, entry_price,
+    def create_trade(self, timeframe_obj, direction, strategy, risk_pct, entry_price,
                 stop_loss, take_profit = None, risk_reward = None, details = {}):
         return Trade(
-            symbol=symbol,
-            timeframe=timeframe,
+            timeframe_obj=timeframe_obj,
             direction=direction,
             strategy=strategy,
             risk_pct=risk_pct,

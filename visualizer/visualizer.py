@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 import pandas as pd
-from data.log_handler import log_chart, log_event
+from data.log_handler import log_chart
 
 class Visualizer():
     def __init__(self, candlestick_visualizer, trade_visualizer, swing_visualizer, trendline_visualizer, order_zone_visualizer, trend_visualizer, ema_visualizer, session_visualizer):
@@ -17,10 +17,15 @@ class Visualizer():
         symbol = trade.symbol
         timeframe = trade.timeframe
         framework = trade.strategy.fw
-        timeframe_obj = framework.get_timeframe_obj(symbol, timeframe)
+        timeframe_obj = trade.timeframe_obj
         chart = framework.get_candles_df_with_open_candle(symbol, timeframe)
         since = chart['time'].iloc[0]
         to = chart['time'].iloc[-1]
+
+        if trade.close_price is None:
+            to_trade = to + (timeframe_obj.timestamp * 10)
+        else:
+            to_trade = to
 
         if trade.visual_open_time is None:
             if timeframe_obj.candle.is_new_candle:
@@ -48,10 +53,10 @@ class Visualizer():
         fig.add_trace(volume_traces)
 
         if long_trades is not None:
-            long_trade_traces = self.trade_visualizer.get_long_trades(long_trades, to)
+            long_trade_traces = self.trade_visualizer.get_long_trades(long_trades, to_trade)
             fig.add_traces(long_trade_traces)
         if short_trades is not None:
-            short_trade_traces = self.trade_visualizer.get_short_trades(short_trades, to)
+            short_trade_traces = self.trade_visualizer.get_short_trades(short_trades, to_trade)
             fig.add_traces(short_trade_traces)
         if swing_lows is not None:
             low_traces = self.swing_visualizer.get_swing_lows(swing_lows, since)
@@ -85,11 +90,6 @@ class Visualizer():
         fig.update_layout(layout)
 
         chart_path = log_chart(symbol, timeframe, fig)
-        if trade.close_price is None:
-            log_event('A trade has been opened', ' ' + chart_path)
-        else:
-            log_event('A trade has been closed', ' ' + chart_path)
-
         return chart_path
 
     def visualize_from_input(self, timeframe):

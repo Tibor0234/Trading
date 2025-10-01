@@ -1,9 +1,8 @@
 import discord
 from discord.ext import commands
-import os
-from PIL import Image
 import asyncio
-from playwright.async_api import async_playwright
+from data.log_handler import make_screenshot
+
 
 class DiscordBot:
     def __init__(self, token, callback):
@@ -15,81 +14,119 @@ class DiscordBot:
         self.bot = commands.Bot(command_prefix="!", intents=intents)
         self.token = token
         self.user_id = 454292237090816010
+        self.callback = callback
 
         self.bot.add_listener(self.on_raw_reaction_add)
-        self.callback = callback
+
+        # {message_id: {"trade": trade, "task": task, "embed": embed, "msg": msg}}
+        self.trades = {}
 
     def run_bot(self):
         self.bot.run(self.token)
 
-    async def make_screenshot(self, html_path):
-        img_path = html_path.replace('.html', '.png')
+    def run_setup_message(self, trade, html_path):
+        img_path = make_screenshot(html_path)
+        asyncio.run_coroutine_threadsafe(
+            self.send_setup_dm(img_path, trade),
+            self.bot.loop
+        )
 
-        try:
-            async with async_playwright() as p:
-                print('async_playwright runs')
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                await page.set_viewport_size({'width': 1200, 'height': 800})
+    def run_result_message(self, trade, html_path, result):
+        img_path = make_screenshot(html_path)
+        asyncio.run_coroutine_threadsafe(
+            self.send_result_dm(trade, img_path, result),
+            self.bot.loop
+        )
 
-                url = f'file:///{html_path.replace(os.sep, "/")}'
-                print("Opening:", url)
-                await page.goto(url)
-
-                await page.screenshot(path=img_path, full_page=False)
-                print("Saved screenshot:", img_path, os.path.exists(img_path))
-
-                await browser.close()
-        except Exception as e:
-            print("Playwright error:", e)
-            return None
-
-        try:
-            img = Image.open(img_path)
-            w, h = img.size
-            if w > 40 and h > 40:
-                img.crop((20, 20, w-20, h-20)).save(img_path)
-        except Exception as e:
-            print("PIL error:", e)
-
-        return img_path
-
-
-    async def send_setup_dm(self, html_path, timeout):
-        img_path = await self.make_screenshot(html_path)
-
+    async def send_setup_dm(self, img_path, trade):
+        timeout = trade.timeframe_obj.timestamp
         user = await self.bot.fetch_user(self.user_id)
-        msg = await user.send("📊 Do you approve this trade?", file=discord.File(img_path))
+
+        # alap embed (szürke színnel)
+        embed = discord.Embed(
+            title="📊 New Trade Setup",
+            description="Do you approve this trade?",
+            color=discord.Color.light_grey()
+        )
+        file = discord.File(img_path, filename="trade.png")
+        embed.set_image(url="attachment://trade.png")
+
+        msg = await user.send(file=file, embed=embed)
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
 
-        self.active = True  # trade aktív
+        # hozzárendeljük az üzenet ID-t a trade-hez
+        trade.setup_msg_id = msg.id
 
         async def expire():
             await asyncio.sleep(timeout)
-            if self.active:
-                self.active = False
-                self.callback(False)
-                await user.send("⌛ Trade expired")
+            if msg.id in self.trades:
+                self.trades.pop(msg.id, None)
+                # embed színe -> narancs (lejárt)
+                embed.color = discord.Color.orange()
+                embed.description = "Trade expired"
+                await msg.edit(embed=embed)
+                self.callback(trade, False)
 
-        asyncio.create_task(expire())
+        task = asyncio.create_task(expire())
+        self.trades[msg.id] = {
+            "trade": trade,
+            "task": task,
+            "embed": embed,
+            "msg": msg
+        }
 
     async def on_raw_reaction_add(self, payload):
-        if payload.user_id != self.user_id or not getattr(self, "active", False):
+        if payload.user_id != self.user_id:
             return
-        user = await self.bot.fetch_user(self.user_id)
+
+        if payload.message_id not in self.trades:
+            return
+
+        entry = self.trades.pop(payload.message_id)
+        trade, task, embed, msg = entry["trade"], entry["task"], entry["embed"], entry["msg"]
+        task.cancel()
 
         if str(payload.emoji) == "✅":
-            await user.send("✅ Trade approved")
-            self.callback(True)
+            embed.color = discord.Color.green()
+            embed.description = "Trade approved"
+            await msg.edit(embed=embed)
+            self.callback(trade, True)
         elif str(payload.emoji) == "❌":
-            await user.send("❌ Trade denied")
-            self.callback(False)
+            embed.color = discord.Color.red()
+            embed.description = "Trade denied"
+            await msg.edit(embed=embed)
+            self.callback(trade, False)
 
-        self.active = False  # trade lezárva
-
-    async def send_trade_result(self, html_path):
-        img_path = await self.make_screenshot(html_path)
-
+    async def send_result_dm(self, trade, img_path, result):
         user = await self.bot.fetch_user(self.user_id)
-        await user.send("📊 A trade has been closed.", file=discord.File(img_path))
+
+        # szín választás
+        if result == 1:
+            color = discord.Color.green()
+            desc = "Trade closed with profit"
+        else:
+            color = discord.Color.red()
+            desc = "Trade closed with loss"
+
+        embed = discord.Embed(
+            title="📊 Trade Closed",
+            description=desc,
+            color=color
+        )
+        file = discord.File(img_path, filename="result.png")
+        embed.set_image(url="attachment://result.png")
+
+        # mindig a trade.setup_msg_id alapján keressük vissza
+        setup_msg = None
+        if hasattr(trade, "setup_msg_id"):
+            try:
+                setup_msg = await user.fetch_message(trade.setup_msg_id)
+            except discord.NotFound:
+                setup_msg = None
+
+        if setup_msg:
+            await setup_msg.reply(file=file, embed=embed)
+            self.trades.pop(trade.setup_msg_id, None)  # takarítás
+        else:
+            await user.send(file=file, embed=embed)

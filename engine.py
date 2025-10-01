@@ -38,7 +38,7 @@ class Engine(ABC):
         self.visualizer.visualize_from_input(timeframe)
 
     def visualize_from_trade(self, trade):
-        self.visualizer.visualize_from_trade(trade)
+        return self.visualizer.visualize_from_trade(trade)
 
     @abstractmethod
     def update_on_candle_close_abstract(self, sym, tf, cache_df):

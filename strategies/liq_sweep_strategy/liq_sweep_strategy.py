@@ -10,6 +10,7 @@ class LiqSweepStrategy(Strategy):
 
     def on_candle_close(self, sym, tf):
         if self.fw.is_trade_open(sym, strategy=self):
+            return
             trade = self.fw.get_open_trades(sym, strategy=self)[0]
             if trade.stop_loss == trade.entry_price: return
             last_candle = self.fw.get_last_closed_candle(sym, tf)
@@ -51,7 +52,7 @@ class LiqSweepStrategy(Strategy):
             risk_pct=2,
             entry_price=last_candle['close'],
             stop_loss=zone.zone_high + (2*unit),
-            risk_reward=2,
+            risk_reward=1.5,
             details={'supply_zones_visual': [zone]}
         )
         self.open_trade(trade)
@@ -74,7 +75,7 @@ class LiqSweepStrategy(Strategy):
             risk_pct=2,
             entry_price=last_candle['close'],
             stop_loss=zone.zone_low - (2 * unit),
-            risk_reward=2,
+            risk_reward=1.5,
             details={'demand_zones_visual': [zone]}
         )
         self.open_trade(trade)
@@ -102,7 +103,7 @@ class LiqSweepStrategy(Strategy):
             risk_pct=2,
             entry_price=last_candle['close'],
             stop_loss=liq_high['high'] + (2*unit),
-            risk_reward=2,
+            risk_reward=1.5,
             details={'swing_highs_visual': liq_highs}
         )
         self.open_trade(trade)
